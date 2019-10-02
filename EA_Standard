@@ -1,0 +1,175 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from numba import jit, njit
+from time import time
+
+# parameter
+
+DNA_num = 100
+cross_rate = 0.4
+mutate_rate = 0.4
+times = 1000
+
+# read document
+data_list = np.loadtxt('tsp_test2.txt')
+Point_num = len(data_list)
+
+# show image
+plt.ion()
+
+
+def plotting(x, y, d):
+    plt.cla()
+    plt.scatter(np.array(data_list[:, 0]).T, np.array(data_list[:, 1]).T, s=1, c='k')
+    plt.plot(x.T, y.T, 'g-', linewidth=0.05)
+    plt.text(-0.01, -0.01, "Total distance = %.2f" % d, fontdict={'size': 20, 'color': 'red'})
+    plt.xlim((-0.1, 1.1))
+    plt.ylim((-0.1, 1.1))
+    plt.pause(0.01)
+
+
+def plotting_2(x, y, error):
+    plt.cla()
+    plt.plot(x.T, y.T,'g-')
+    plt.title('Evolutionary Algorithm in TSP')
+    plt.xlabel('Evaluations')
+    plt.ylabel('Distance')
+    plt.text(600, 500, "Error = %.2f" % error, fontdict={'size': 20, 'color': 'green'})
+    plt.xlim((-1000, times + 1000))
+    plt.ylim((-20, 550))
+    plt.pause(0.01)
+
+
+@jit(nopython=True, nogil=True)
+def decode(dna, city_position):
+    decode_x = np.zeros((DNA_num, Point_num))
+    decode_y = np.zeros((DNA_num, Point_num))
+    for c in range(DNA_num):
+        d = 0
+        for e in dna[c]:
+            a = city_position[e]
+            decode_x[c][d] = a[0]
+            decode_y[c][d] = a[1]
+            d += 1
+    return decode_x, decode_y
+
+
+@jit(nopython=True, nogil=True)
+def wtf(x1, x2, y1, y2):
+    result = np.sqrt(np.square(x1 - x2) + np.square(y1 - y2))
+    return result
+
+
+@njit
+def func(a, b):
+    dis_func = np.zeros(DNA_num)
+    for v in range(DNA_num):
+        m = 0
+        for n in range(len(a[0]) - 1):
+            m += wtf(a[v][n], a[v][n + 1], b[v][n], b[v][n + 1])
+        dis_func[v] = m
+    return dis_func
+
+
+def select(distance_s):
+    start_select = np.argsort(distance_s)
+    gap = int(DNA_num * 0.6)
+    cut1 = list(start_select[:gap])
+    cut2 = list(start_select[:(DNA_num - gap)])
+    end_select = cut1 + cut2
+    return np.array(all_gens)[end_select]
+
+
+def crossover(choose_gens, allgens):
+    if np.random.rand() < cross_rate:
+        key = np.random.randint(0, DNA_num, size=1)
+        knife = np.random.randint(1, Point_num-1)
+
+        cut_gens = choose_gens[:knife]
+        evolved = allgens[key, np.isin(allgens[key].ravel(), cut_gens, invert=True)]
+        choose_gens = np.concatenate((cut_gens, evolved))
+    return choose_gens
+
+
+# @jit(nopython=True, nogil=True)
+def mutate(new_gens):
+    choice = np.random.randint(1, Point_num - 2)
+    choice2 = choice + 1
+    dis2back = wtf(data_list[new_gens[choice]][0], data_list[new_gens[choice2]][0], data_list[new_gens[choice]][1],
+                   data_list[new_gens[choice2]][1])
+    for i_mu in range(Point_num - 2):
+        if (choice != i_mu) and (choice != i_mu + 1):
+            dis2now = wtf(data_list[new_gens[choice]][0], data_list[new_gens[i_mu]][0], data_list[new_gens[choice]][1],
+                          data_list[new_gens[i_mu]][1])
+            if dis2now < dis2back:
+                dis2back = dis2now
+                choice2 = i_mu
+
+    p = wtf(data_list[new_gens[choice2]][0], data_list[new_gens[choice2 + 1]][0], data_list[new_gens[choice2]][1],
+            data_list[new_gens[choice2 + 1]][1])
+    q = wtf(data_list[new_gens[choice2]][0], data_list[new_gens[choice2 - 1]][0], data_list[new_gens[choice2]][1],
+            data_list[new_gens[choice2 - 1]][1])
+
+    if p < q:
+        mutating = new_gens[choice]
+        new_gens[choice] = new_gens[choice2 - 1]
+        new_gens[choice2 - 1] = mutating
+    else:
+        mutating = new_gens[choice]
+        new_gens[choice] = new_gens[choice2 + 1]
+        new_gens[choice2 + 1] = mutating
+
+    return new_gens
+
+
+def evolve(distance_e):
+    evolve_gens = select(distance_e)
+    duplication = evolve_gens[:]
+    n = 0
+    gens = np.zeros((DNA_num, Point_num))
+    for g1 in range(DNA_num):
+        child = crossover(evolve_gens[g1], duplication)
+        if np.random.rand() < mutate_rate:
+            child = list(child)
+            child = np.array(mutate(child))
+        gens[n] = child
+        n += 1
+    return gens
+
+
+best_line = 0
+distance = 0
+all_gens = []
+start = time()
+
+
+for i in range(DNA_num):
+    all_gens.append(np.random.permutation(Point_num))
+
+best_y = []
+for generation in range(times):
+    lx, ly = decode(all_gens, data_list)
+    distance = func(lx, ly)
+    best_line = np.argmin(distance)
+    best_y.append(distance[best_line])
+    print("generation: ", generation + 1, "distance:", distance[best_line])
+    all_gens = evolve(distance).astype(int)
+    if generation == times - 1:
+        plotting(lx[best_line], ly[best_line], distance[best_line])
+        # plotting_2(best_x, best_y_go, std_error, flag)
+
+best_x = []
+
+for i in range(1, times + 1):
+    best_x.append(i)
+best_y = np.array(best_y).reshape(1, times)
+best_x = np.array(best_x).reshape(1,times)
+plotting_2(best_x, best_y)
+
+time6 = time()
+
+print('Time Used: ', (time6 - start), 's')
+print('Best Distance: ', distance[best_line])
+# print (scripture)
+plt.ioff()
+plt.show()
